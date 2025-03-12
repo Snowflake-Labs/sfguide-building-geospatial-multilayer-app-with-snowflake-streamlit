@@ -1,4 +1,4 @@
-# Building Geospatial multi-layer apps with Snowflake and Streamlit
+# Building Geospatial Multi-Layer Apps with Snowflake and Streamlit
 
 
 ## Overview
