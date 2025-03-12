@@ -1,4 +1,4 @@
-# sfguide-building-geospatial-multilayer-apps-with-snowflake-streamlit
+# Building Geospatial multi-layer apps with Snowflake and Streamlit
 
 
 ## Overview
