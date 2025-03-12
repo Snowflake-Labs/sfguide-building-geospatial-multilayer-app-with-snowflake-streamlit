@@ -1,4 +1,4 @@
-# sfguide-building-geospatial-multilayer-app-with-snowflake-streamlit
+# sfguide-building-geospatial-multilayer-apps-with-snowflake-streamlit
 
 
 ## Overview
