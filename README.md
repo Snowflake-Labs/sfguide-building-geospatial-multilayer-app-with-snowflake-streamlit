@@ -11,4 +11,4 @@ A use case investigation on how you can call an Api to get the latest flood warn
 
 ## Step-By-Step Guide
 
-For prerequisites, environment setup, step-by-step guide and instructions, please refer to the [QuickStart Guide]()
+For prerequisites, environment setup, step-by-step guide and instructions, please refer to the [QuickStart Guide](https://quickstarts.snowflake.com/guide/etting-started-with-analysing-geospatial-location-data)
