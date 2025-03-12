@@ -1,4 +1,5 @@
-# sfguide-getting-started-with-analysing-geospatial-location-data
+# sfguide-building-geospatial-multilayer-app-with-snowflake-streamlit
+
 
 ## Overview
 In this guide you will learn how to analyse and transform geospatial data in Snowflake. You will be covering:
