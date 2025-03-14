@@ -57,10 +57,10 @@ st.markdown(
 
 image = 'https://www.snowflake.com/wp-content/themes/snowflake/assets/img/brand-guidelines/logo-white-example.svg'
 
-st.markdown('<h1 class="heading">BRITISH TOWNS WITH ROADS AND BUILDINGS</h2><BR>', unsafe_allow_html=True)
+st.markdown('<h1 class="heading">BRITISH TOWNS FOR URBAN PLANNING</h2><BR>', unsafe_allow_html=True)
 
 tooltip = {
-   "html": """<b>Name:</b> {NAME_1} <br> <b>Form of Way:</b> {FORM_OF_WAY} <br> <b>Length:</b> {LENGTH}""",
+   "html": """<b>Name:</b> {NAME_1} <br> <b>Form of Way:</b> {FORM_OF_WAY} <br> <b>Length:</b> {LENGTH},<br> <b>Unique Property Reference Number:</b> {UPRN}""",
    "style": {
        "width":"50%",
         "backgroundColor": "steelblue",
@@ -73,10 +73,12 @@ tooltip = {
 
 
 road_links = session.table('DEFAULT_SCHEMA.ROAD_LINKS')
+road_links = road_links.with_column('UPRN',lit('N/A'))
 urban_extents = session.table('DEFAULT_SCHEMA.URBAN_EXTENTS').with_column_renamed('NAME1_TEXT','NAME_1')
 
 road_nodes = session.table('DEFAULT_SCHEMA.ROAD_NODES')
-BUILDINGS = session.table('DEFAULT_SCHEMA.BUILDINGS')
+road_nodes = road_nodes.with_column('UPRN',lit('N/A'))
+BUILDINGS = session.table('DEFAULT_SCHEMA.BUILDINGS_WITH_UPRN')
 
 
 
@@ -92,7 +94,11 @@ datajoined = data.drop('NAME_1').join(road_links,call_function('ST_INTERSECTS',d
 nodes_filtered = road_nodes.join(datajoined.select('LINESTRING'),call_function('ST_INTERSECTS',
                                          datajoined['LINESTRING'],road_nodes['POINT'])).drop('LINESTRING')
 
-BUILDINGS = BUILDINGS.filter(col('NAME1_TEXT')==filter).select('NAME1_TEXT','GEOMETRY','CLASS','SUBTYPE')
+BUILDINGS = BUILDINGS.filter(col('NAME1_TEXT')==filter).select('NAME1_TEXT','GEOMETRY','CLASS','SUBTYPE','UPRN')
+
+BUILDINGS = BUILDINGS.with_column_renamed('NAME1_TEXT','NAME_1')
+BUILDINGS = BUILDINGS.with_column('FORM_OF_WAY',lit('N/A'))
+BUILDINGS = BUILDINGS.with_column('LENGTH',lit('N/A'))
 data3pd = BUILDINGS.limit(10000).to_pandas()
 
 
@@ -148,7 +154,7 @@ building_layer = pdk.Layer(
     get_fill_color=[252, 181, 108],
     get_line_color=[0, 0, 0],
     auto_highlight=True,
-    pickable=False,
+    pickable=True,
 )
 
 
