@@ -9,6 +9,8 @@ session = get_active_session()
 from snowflake.snowpark.functions import *
 from snowflake.snowpark.types import *
 st.set_page_config(layout="wide")
+
+### ADD THEMING
 logo = 'snowflake_logo_color_rgb.svg'
 with open('extra.css') as ab:
     st.markdown(f"<style>{ab.read()}</style>", unsafe_allow_html=True)
@@ -19,6 +21,7 @@ def selected_postcode(postcode):
     return session.table('DEFAULT_SCHEMA.POSTCODES').filter(col('NAME1')==postcode).select('GEOGRAPHY','PC_SECT')
 
 
+#### SIDE BAR TO CHANGE IRRADIATION SLIDERS
 
 with st.sidebar:
     with st.expander('Adjust % irradation'):
@@ -41,9 +44,12 @@ with st.sidebar:
 
 st.markdown('<h0black>SOLAR POWER | </h0black><h0blue>ENERGY INSIGHTS</h0blue><BR>', unsafe_allow_html=True)
 
+#### GENERIC TOOLTIP FOR BOTH MAPS
+
 tooltip = {
    "html": """ 
    <br> <b>UPRN:</b> {UPRN} 
+   <br><b>Number of Unique Addresses</b> {NUMBER_OF_UNIQUE_ADDRESSES}
    <br> <b>Description:</b> {DESCRIPTION}
    <br> <b>Roof Material:</b> {ROOFMATERIAL_PRIMARYMATERIAL}
    <br> <b>Solar Panel Presence:</b> {ROOFMATERIAL_SOLARPANELPRESENCE}
@@ -62,10 +68,16 @@ tooltip = {
        "text-wrap": "balance"
    }
 }
+
+### ADD WEATHER INFO AND BUILDINGS INFO
+
 BUILDINGS = session.table('DEFAULT_SCHEMA.BUILDINGS_WITH_ROOF_SPECS')
 SOLAR_ELEVATION_DF = session.table('DEFAULT_SCHEMA.SOLAR_ELEVATION')
 
 st.markdown('<h1sub>SEARCH FOR BUILDINGS</h1sub><BR>',unsafe_allow_html=True)
+
+
+##### CHOOSE LOCATION AND DATE FOR WEATHER INFORMATION
 
 col1,col2,col3, col4 = st.columns(4)
 
@@ -74,21 +86,29 @@ with col1:
     filter = BUILDINGS.select('NAME1_TEXT').distinct()
     filter = st.selectbox('Choose Town:',filter, 9)
 with col2:
-    postcodes = session.table('DEFAULT_SCHEMA.POSTCODES').filter(col('NAME1_TEXT')==filter)
-    postcodef = st.selectbox('Postcode:',postcodes, 10)
+    postcodes_R = session.table('DEFAULT_SCHEMA.POSTCODES')
+    postcodes = postcodes_R.filter(col('NAME1_TEXT')==filter)
+    postcodef = st.selectbox('Postcode:',postcodes)
+    pcode_selected = postcodes_R.filter(col('NAME1')==postcodef).select('PC_SECT')
+    
 with col3:
     distance = st.number_input('Distance in M:', 20,2000,500)
 with col4:
     selected_date = st.date_input('Date for Solar Elevation Angle:',datetime.date(2024,1, 1),datetime.date(2024,1,1),datetime.date(2024,12,31))
 st.divider()
+
+##### FILTER WEATHER DATA BASED ON LOCATION AND TIME
+SOLAR_ELEVATION_DF = SOLAR_ELEVATION_DF.join(pcode_selected,'PC_SECT')
 SOLAR_ELEVATION_DF_FILTERED = SOLAR_ELEVATION_DF.filter(call_function('date',col('"Validity_date_and_time"'))==selected_date)
 
+#### FILTER BUILDINGS BASED ON LOCATION
 BUILDINGS = BUILDINGS.filter(col('NAME1_TEXT')==filter)
 selected_point = selected_postcode(postcodef)
 BUILDINGS = BUILDINGS.join(selected_point.with_column_renamed('GEOGRAPHY','SPOINT'),
                            call_function('ST_DWITHIN',selected_point['GEOGRAPHY'],
                                         BUILDINGS['GEOGRAPHY'],distance)).drop('SPOINT')
 
+#### MAKE BUILDINGS DIRECT IRRADIANCE BASED ON SLOPEYNESS OF ROOFS AND SLIDERS
 
 BUILDINGS = BUILDINGS.with_column('DIRECT_IRRADIANCE_M2',
                                   col('ROOFSHAPEASPECT_AREAFLAT_M2')+
@@ -102,12 +122,16 @@ BUILDINGS = BUILDINGS.with_column('DIRECT_IRRADIANCE_M2',
                                  col('ROOFSHAPEASPECT_AREAFACINGSOUTHWEST_M2')*south_west_facing)
 
 
+##### PRODUCE SUMMARY TO UNDERSTAND POTENTIAL ENERGY CAPTURE IF ALL BUILDINGS IN SELECTION HAD SOLAR PANELS INSTALLED
 
 SOLAR_BUILDINGS_SUM = BUILDINGS.agg(sum('DIRECT_IRRADIANCE_M2').alias('DIRECT_IRRADIANCE_M2'),
                                    sum('GEOMETRY_AREA_M2').alias('TOTAL_AREA')).join(SOLAR_ELEVATION_DF_FILTERED.group_by('"Validity_date_and_time"').agg(avg('"Solar_elevation_angle"').alias('"Solar_elevation_angle"')))
 SOLAR_BUILDINGS_SUM = SOLAR_BUILDINGS_SUM.with_column('total_energy',when(col('"Solar_elevation_angle"')<0,0).otherwise(col('DIRECT_IRRADIANCE_M2')*cos(radians(lit(solar_panel_angle))-col('"Solar_elevation_angle"'))))
                                                                                                      
 st.markdown('<h1sub> TOTAL AREA AVAILABLE FOR ENERGY CONVERSION</h1sub>',unsafe_allow_html=True)
+
+### VISUALISE TIME ANALYSIS FOR A PARTICULAR DATE IN THE YEAR
+
 with st.expander('View Time Analysis'):
     st.bar_chart(SOLAR_BUILDINGS_SUM.to_pandas(),y='TOTAL_ENERGY',x='Validity_date_and_time', color='#29B5E8')
 
@@ -115,9 +139,10 @@ st.divider()
 
 
 
+### CREATE A VIEW OF BUILDINGS WHICH ALSO INCLUDES COLOURS TO PRODUCE CONDITIONAL FORMATTING WHICH DEPENDS ON EFFICIENCY RATIO
 
-
-BUILDINGS_V = BUILDINGS.limit(2000).group_by(
+BUILDINGS_V = BUILDINGS.limit(2000).group_by('OSID',
+                                            'PRIMARYSITEID',
                                            'THEME',
                                            'DESCRIPTION',
                                            col('GEOMETRY_AREA_M2').astype(StringType()).alias('GE'),
@@ -135,24 +160,86 @@ BUILDINGS_V = BUILDINGS.limit(2000).group_by(
                                             col('COLOR')[2].alias('B'))\
 .agg(array_to_string(array_agg('UPRN'),
                      lit(', ')).alias('UPRN'),
-     approx_count_distinct('UPRN').alias('NUMBER_UPRN'),
+     approx_count_distinct('UPRN').alias('NUMBER_OF_UNIQUE_ADDRESSES'),
      any_value('GEOGRAPHY').alias('GEOGRAPHY'))
-                                          
-                                                              
 
+
+                                                              
+### NEW DATAFRAME TO LIMIT TO THE BUILDING THAT HAS THE MOST AREA AVAILABLE FOR SOLAR PANELS WITH SLOPEYNESS TAKEN INTO ACCOUNT (DIRECT IRRADIANCE IN M2 AND ADD THE CENTROID TO FOCUS A NEW MAP)
 z = BUILDINGS_V.with_column('D',(col('D').astype(FloatType()))).sort(col('D').desc()).limit(1).with_column('CENTROID',call_function('ST_CENTROID',col('GEOGRAPHY')))\
 .with_column('LON',call_function('ST_X',col('CENTROID')))\
 .with_column('LAT',call_function('ST_Y',col('CENTROID'))).drop('CENTROID')
 
+#### FILTER BUILDINGS AND BUILDING PARTS TO PRODUCE DATAFRAMES FOR CORTEX
+zosid = z.select('OSID','LAT','LON')
+zdet1 = zosid.join(BUILDINGS_V,'OSID')
+zdet0 = zosid.join(BUILDINGS,'OSID').drop('GEOMETRY','GEOGRAPHY')
+zdet0_grouped = zdet0.group_by(*[col(c) for c in zdet0.columns if c != 'UPRN']) \
+                     .agg(count_distinct(col('UPRN')).alias('NUMBER_OF_ADDRESSES'))
+
+
+#### JOIN THE SITE REF NUMBER IN ORDER TO JOIN TO BUILDING PARTS FOR THE HIGHLIGHTED BUILDING
+
+site_ref = session.table('SAMPLE_BUILDINGS__GB_NATIONAL_GEOSPATIAL_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDING_SITEREF_TBL')
+zdet = zdet1.join(site_ref,site_ref['SITEID']==zdet1['PRIMARYSITEID'])
+zparts = session.table('SAMPLE_BUILDINGS__GB_NATIONAL_GEOSPATIAL_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDINGPART_TBL')
+zparts = zparts.join(zdet.drop('OSID','GEOGRAPHY',
+                               'DESCRIPTION',
+                               'THEME','GE',
+                              
+                              ),zparts['OSID']==zdet['BUILDINGPARTID'])
+
+zparts = zparts.with_column_renamed('GEOMETRY_AREA_M2','GE')
+
+
+
+
+
+
 zpd = z.to_pandas()
+zpd2 = zparts.select('UPRN',
+                     'NUMBER_OF_UNIQUE_ADDRESSES',
+                     'GEOGRAPHY',
+                     'LAT',
+                     'LON',
+                     'HEIGHT_ABSOLUTEMIN_M',
+                     'GE',
+                     'THEME',
+                     'DESCRIPTION',
+                     'ROOFMATERIAL_PRIMARYMATERIAL',
+                     'ROOFSHAPEASPECT_SHAPE',
+                     'ROOFMATERIAL_SOLARPANELPRESENCE',
+                     'ROOFMATERIAL_GREENROOFPRESENCE','R','G','B','A','RF','D',div0(col('D'),col('GE')).alias('EFFICIENCY_RATIO')).to_pandas()
+                     
 
 zpd["coordinates"] = zpd["GEOGRAPHY"].apply(lambda row: json.loads(row)["coordinates"])
+zpd2["coordinates"] = zpd2["GEOGRAPHY"].apply(lambda row: json.loads(row)["coordinates"])
 zLON = zpd.LON.iloc[0]
 zLAT = zpd.LAT.iloc[0]
 
+##### CORTEX PROMPT ENGINEERING
+
+prompt = 'Tell me information about the building as well as the building part information including location information - details specified in the following infomation:'
+prompt2 = 'Also tell me about the solar elevation and the weather, and how it might relate to the building.'
+wf_json = SOLAR_ELEVATION_DF_FILTERED.drop('POINT').selectExpr("OBJECT_CONSTRUCT(*) AS json_object")
+wf_json = wf_json.select(array_agg('JSON_OBJECT').astype(StringType()).alias('WEATHER_OBJECT'))
+
+bf_json = zdet0_grouped.selectExpr("OBJECT_CONSTRUCT(*) AS json_object")
+bf_json = bf_json.select(array_agg('JSON_OBJECT').astype(StringType()).alias('BUILDING_OBJECT'))
+
+df_json = zparts.drop('GEOMETRY','GEOGRAPHY').selectExpr("OBJECT_CONSTRUCT(*) AS json_object")
+df_json = df_json.select(array_agg('JSON_OBJECT').astype(StringType()).alias('PART_OBJECT'))
+data = df_json.join(wf_json).join(bf_json)
+
+cortex = data.select(call_function('snowflake.cortex.complete',
+                                          'claude-3-5-sonnet',
+                                          concat(lit(prompt),
+                                             lit('BUILDING_INFO '),col('BUILDING_OBJECT'),lit('BUILDING_PART'),col('PART_OBJECT'),lit(prompt2),col('WEATHER_OBJECT'),
+                                            lit('Return in Markdown, reverse geocode the location where possible and finish with a written summary and use icons to meke it easy to read'))).alias('CORTEX'))
 
 
 
+### LAYERS FOR SMALL MAP WITH ONE BUILDING
 
 potential = pdk.Layer(
     "PolygonLayer",
@@ -166,27 +253,75 @@ potential = pdk.Layer(
     auto_highlight=True,
     pickable=True,
 )
+
+potential_parts = pdk.Layer(
+    "PolygonLayer",
+    zpd2,
+    opacity=0.5,
+    get_elevation='HEIGHT_ABSOLUTEMIN_M',
+    extruded=True,
+    elevation_scale=1,
+    get_polygon="coordinates", 
+    filled=True,
+    get_fill_color=["R-1","G-1","B-1"],
+    get_line_color=[0, 0, 0],
+    get_line_width=0.3,
+    auto_highlight=True,
+    pickable=True,
+)
 zview_state = pdk.ViewState(
     longitude=zLON,
     latitude=zLAT,
+    pitch=50,
     zoom=18,  # Adjust zoom if needed
-    pitch=0,
+    
 )
 zr = pdk.Deck(
-    layers=[potential],
+    layers=[potential,potential_parts],
     initial_view_state=zview_state,
     map_style=None,
     tooltip=tooltip)
 
 
+### ADD CORTEX AND SIDE MAP TO THE SIDE BAR
 
 with st.sidebar:
     st.divider()
     st.markdown('<h1grey> building with most potential</h1grey>',unsafe_allow_html=True)
-    st.pydeck_chart(zr, use_container_width=True,height=600)
+    
+    st.markdown(f'''<h1grey>DESCRIPTION: <h1sub>{zpd.DESCRIPTION.iloc[0]}</h1sub><BR>
+    <h1grey>PRIMARY MATERIAL: </h1grey><h1sub>{zpd.ROOFMATERIAL_PRIMARYMATERIAL.iloc[0]}</h1sub><BR>
+    <h1grey>ROOF ASPECT SHAPE: </h1grey><h1sub>{zpd.ROOFSHAPEASPECT_SHAPE.iloc[0]}</h1sub><BR>
+    <h1grey>SOLAR PANEL PRESENCE: </h1grey><h1sub>{zpd.ROOFMATERIAL_SOLARPANELPRESENCE.iloc[0]}</h1sub><BR>
+    <h1grey>GREEN ROOF PRESENCE: </h1grey><h1sub>{zpd.ROOFMATERIAL_GREENROOFPRESENCE.iloc[0]}</h1sub><BR>
+    ''',unsafe_allow_html=True)
+
+    st.markdown(f'<h1sub>CORTEX INSIGHTS</h1sub><br><p>{prompt} <BR><BR> {prompt2}',unsafe_allow_html=True)
+    
+    with st.container():
+        st.markdown(f'<h1sub>RAW DATA CAPTURED</h1sub>',unsafe_allow_html=True)
+        with st.expander('Weather Data'):
+            st.write(data.collect()[0][1])
+        with st.expander('Building Data'):
+            st.write(data.collect()[0][2])
+        with st.expander('Building Part Data'):
+            st.write(data.collect()[0][0])
+    run_cortex = st.button('RUN CORTEX')
+
+    if run_cortex:
+        cortex = cortex.collect()[0][0]
+        with st.expander('Cortex Driven Insights'):
+            st.markdown(f'{cortex}',unsafe_allow_html=True)
+    
+    
     
 
+    st.pydeck_chart(zr, use_container_width=True,height=600)
+    st.divider()
 
+    
+
+#### CREATE THE MAIN MAP WITH ALL BUILDINGS
 
 centre = selected_point
 centre = centre.with_column('LON',call_function('ST_X',col('GEOGRAPHY')))
