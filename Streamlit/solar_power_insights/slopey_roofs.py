@@ -180,9 +180,13 @@ zdet0_grouped = zdet0.group_by(*[col(c) for c in zdet0.columns if c != 'UPRN']) 
 
 #### JOIN THE SITE REF NUMBER IN ORDER TO JOIN TO BUILDING PARTS FOR THE HIGHLIGHTED BUILDING
 
-site_ref = session.table('SAMPLE_BUILDINGS__GB_NATIONAL_GEOSPATIAL_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDING_SITEREF_TBL')
+cross_ref = session.table('SAMPLE_BUILDINGS__GB_OS_NATIONAL_GEOGRAPHIC_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDING_BLDTOBLDPRTCROSSREF_TBL')
+
+site_ref = session.table('SAMPLE_BUILDINGS__GB_OS_NATIONAL_GEOGRAPHIC_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDING_BLDTOSTECROSSREF_TBL')
+
+site_ref = site_ref.join(cross_ref.drop('BUILDINGVERSIONDATE'),'BUILDINGID')
 zdet = zdet1.join(site_ref,site_ref['SITEID']==zdet1['PRIMARYSITEID'])
-zparts = session.table('SAMPLE_BUILDINGS__GB_NATIONAL_GEOSPATIAL_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDINGPART_TBL')
+zparts = session.table('SAMPLE_BUILDINGS__GB_OS_NATIONAL_GEOGRAPHIC_DATABASE.PRS_BUILDING_FEATURES_SCH.PRS_BUILDINGPART_TBL')
 zparts = zparts.join(zdet.drop('OSID','GEOGRAPHY',
                                'DESCRIPTION',
                                'THEME','GE',
@@ -377,8 +381,3 @@ st.markdown('''|<h1grey> EFFICIENCY RATIO  --->>   </h1sub> | <orange20>MORE THA
 st.pydeck_chart(r, use_container_width=True,height=700)
 
 st.caption('Colour key for the buildings.  Efficiency Ratio is the total area divided by the solar coverage lost by the pitch of each roof')
-
-
-
-
-
